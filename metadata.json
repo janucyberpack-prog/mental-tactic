@@ -1,0 +1,6 @@
+{
+  "name": "Mental Tactic",
+  "description": "Production-ready mental wellness platform with editorial journal, mindful practices, and mindful community.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

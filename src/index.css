@@ -1,0 +1,122 @@
+@import "tailwindcss";
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  :root {
+    --ink: #18221d;
+    --paper: #f3f1e9;
+    --white: #fffdf8;
+    --sage: #b9d2be;
+    --dark: #234e3b;
+    --lilac: #c9bef6;
+    --peach: #f1b995;
+    --line: #18221d29;
+
+    --font-serif: Georgia, 'Fraunces', serif;
+    --font-sans: Arial, 'Plus Jakarta Sans', sans-serif;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background-color: var(--paper);
+    color: var(--ink);
+    margin: 0;
+    overflow-x: hidden;
+  }
+
+  h1, h2, h3, .serif {
+    font-family: var(--font-serif);
+    font-weight: 400;
+  }
+}
+
+.wrap {
+  width: min(1320px, calc(100% - 56px));
+  margin: auto;
+}
+
+@media(max-width: 920px) {
+  .wrap {
+    width: calc(100% - 36px);
+  }
+}
+
+@media(max-width: 620px) {
+  .wrap {
+    width: calc(100% - 28px);
+  }
+}
+
+/* Keyframes */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes pulse {
+  0% { transform: scale(.65); opacity: 0; }
+  25% { opacity: .55; }
+  100% { transform: scale(1.35); opacity: 0; }
+}
+
+@keyframes float {
+  to { transform: translateY(-18px) rotate(-4deg); }
+}
+
+@keyframes breathe {
+  50% { transform: scale(1.08); opacity: .58; }
+}
+
+@keyframes marquee {
+  to { transform: translateX(-50%); }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--paper);
+}
+::-webkit-scrollbar-thumb {
+  background: #c4d7cc;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #8ea595;
+}
+
+/* Cursor and accessibility styles */
+@media (hover: hover) and (pointer: fine) {
+  body.custom-cursor-enabled,
+  body.custom-cursor-enabled * {
+    cursor: default;
+  }
+  body.custom-cursor-enabled a,
+  body.custom-cursor-enabled button,
+  body.custom-cursor-enabled input,
+  body.custom-cursor-enabled textarea,
+  body.custom-cursor-enabled [role="button"],
+  body.custom-cursor-enabled .cursor-pointer {
+    cursor: pointer;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .custom-cursor-dot,
+  .custom-cursor-ring {
+    display: none !important;
+  }
+}
+
+

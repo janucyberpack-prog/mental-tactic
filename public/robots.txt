@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /admin/*
+Disallow: /account
+
+Sitemap: https://mental-tactic-65c43.web.app/sitemap.xml

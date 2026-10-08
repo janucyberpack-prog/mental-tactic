@@ -1,0 +1,119 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User profile with display name, email, and access role",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string", "maxLength": 100 },
+        "email": { "type": "string", "maxLength": 150 },
+        "photoURL": { "type": "string", "maxLength": 500 },
+        "role": { "type": "string", "enum": ["user", "editor", "admin"] },
+        "bio": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "Post": {
+      "title": "Journal Post",
+      "description": "Mental wellness article or reflection",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "maxLength": 200 },
+        "slug": { "type": "string", "maxLength": 200 },
+        "excerpt": { "type": "string", "maxLength": 500 },
+        "content": { "type": "string" },
+        "coverImage": { "type": "string", "maxLength": 500 },
+        "category": { "type": "string", "maxLength": 50 },
+        "tags": { "type": "array" },
+        "authorId": { "type": "string" },
+        "authorName": { "type": "string" },
+        "status": { "type": "string", "enum": ["published", "draft", "archived"] },
+        "featured": { "type": "boolean" },
+        "readingTime": { "type": "number" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["title", "slug", "content", "category", "status"]
+    },
+    "Comment": {
+      "title": "Reader Reflection",
+      "description": "Reader commentary on an article",
+      "type": "object",
+      "properties": {
+        "postId": { "type": "string" },
+        "authorId": { "type": "string" },
+        "authorName": { "type": "string" },
+        "content": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["postId", "authorId", "content"]
+    },
+    "SavedPost": {
+      "title": "Saved Article Bookmark",
+      "description": "Bookmarked article in a user's sanctuary",
+      "type": "object",
+      "properties": {
+        "postId": { "type": "string" },
+        "postTitle": { "type": "string" },
+        "postSlug": { "type": "string" },
+        "postExcerpt": { "type": "string" },
+        "postCoverImage": { "type": "string" },
+        "postCategory": { "type": "string" },
+        "savedAt": { "type": "string" }
+      },
+      "required": ["postId", "postTitle", "postSlug"]
+    },
+    "NewsletterSubscriber": {
+      "title": "Newsletter Subscription",
+      "description": "Quiet weekly dispatch subscriber",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "maxLength": 150 },
+        "status": { "type": "string", "enum": ["active", "unsubscribed"] },
+        "subscribedAt": { "type": "string" }
+      },
+      "required": ["email", "status"]
+    },
+    "ContactMessage": {
+      "title": "Contact Inquiry",
+      "description": "Direct message sent to Mental Tactic",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 100 },
+        "email": { "type": "string", "maxLength": 150 },
+        "message": { "type": "string", "maxLength": 5000 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["name", "email", "message"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "User" },
+      "description": "User profiles"
+    },
+    "/users/{userId}/savedPosts/{postId}": {
+      "schema": { "$ref": "SavedPost" },
+      "description": "User saved bookmarks"
+    },
+    "/posts/{postId}": {
+      "schema": { "$ref": "Post" },
+      "description": "Journal articles"
+    },
+    "/comments/{commentId}": {
+      "schema": { "$ref": "Comment" },
+      "description": "User comments on articles"
+    },
+    "/newsletterSubscribers/{subscriberId}": {
+      "schema": { "$ref": "NewsletterSubscriber" },
+      "description": "Newsletter subscribers"
+    },
+    "/contactMessages/{messageId}": {
+      "schema": { "$ref": "ContactMessage" },
+      "description": "Contact form inquiries"
+    }
+  }
+}
