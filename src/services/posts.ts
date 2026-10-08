@@ -344,13 +344,22 @@ export async function getAllPostsAdmin(): Promise<Post[]> {
     const postsCol = collection(db, 'posts');
     const snapshot = await getDocs(postsCol);
     if (snapshot.empty) {
+      // Check if user deleted any local seed posts
+      const deletedSeeds: string[] = (() => {
+        try {
+          return JSON.parse(localStorage.getItem('deleted_seed_posts') || '[]');
+        } catch {
+          return [];
+        }
+      })();
+
       return INITIAL_SEED_POSTS.map((item, idx) => ({
         id: `seed-${idx}`,
         ...item,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         publishedAt: new Date().toISOString()
-      })) as Post[];
+      })).filter(p => !deletedSeeds.includes(p.id)) as Post[];
     }
     return snapshot.docs.map(doc => ({
       id: doc.id,
@@ -380,6 +389,26 @@ export async function createPost(postData: Omit<Post, 'id' | 'createdAt' | 'upda
 export async function updatePost(id: string, postData: Partial<Post>): Promise<void> {
   const path = `posts/${id}`;
   try {
+    if (id.startsWith('seed-')) {
+      // Convert seed post into a real persisted document in Firestore
+      const index = parseInt(id.replace('seed-', ''), 10);
+      const basePost = INITIAL_SEED_POSTS[index] || {};
+      const postsCol = collection(db, 'posts');
+      await addDoc(postsCol, {
+        ...basePost,
+        ...postData,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        publishedAt: (postData.status || basePost.status) === 'published' ? serverTimestamp() : null
+      });
+      // Mark seed as replaced/deleted
+      const deletedSeeds = JSON.parse(localStorage.getItem('deleted_seed_posts') || '[]');
+      if (!deletedSeeds.includes(id)) {
+        deletedSeeds.push(id);
+        localStorage.setItem('deleted_seed_posts', JSON.stringify(deletedSeeds));
+      }
+      return;
+    }
     const postRef = doc(db, 'posts', id);
     const updatePayload: Record<string, any> = {
       ...postData,
@@ -397,9 +426,62 @@ export async function updatePost(id: string, postData: Partial<Post>): Promise<v
 export async function deletePost(id: string): Promise<void> {
   const path = `posts/${id}`;
   try {
+    if (id.startsWith('seed-')) {
+      const deletedSeeds: string[] = (() => {
+        try {
+          return JSON.parse(localStorage.getItem('deleted_seed_posts') || '[]');
+        } catch {
+          return [];
+        }
+      })();
+      if (!deletedSeeds.includes(id)) {
+        deletedSeeds.push(id);
+        localStorage.setItem('deleted_seed_posts', JSON.stringify(deletedSeeds));
+      }
+      return;
+    }
     await deleteDoc(doc(db, 'posts', id));
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
+export async function deleteMultiplePosts(ids: string[]): Promise<void> {
+  for (const id of ids) {
+    await deletePost(id);
+  }
+}
+
+export async function duplicatePost(id: string): Promise<string> {
+  const original = await getPostById(id);
+  if (!original) {
+    throw new Error('Original post not found.');
+  }
+
+  const timestamp = Date.now().toString().slice(-4);
+  const newTitle = `${original.title} (Copy)`;
+  const newSlug = `${original.slug}-copy-${timestamp}`;
+
+  return await createPost({
+    title: newTitle,
+    slug: newSlug,
+    excerpt: original.excerpt,
+    content: original.content,
+    coverImage: original.coverImage,
+    category: original.category,
+    tags: original.tags || [],
+    authorId: original.authorId || 'editorial',
+    authorName: original.authorName || 'Elena Vance',
+    authorPhoto: original.authorPhoto || '',
+    status: 'draft',
+    featured: false,
+    readingTime: original.readingTime || 4
+  });
+}
+
+export async function bulkUpdateStatus(ids: string[], status: PostStatus): Promise<void> {
+  for (const id of ids) {
+    await updatePost(id, { status });
   }
 }
 

@@ -14,13 +14,16 @@ import {
   Database,
   ShieldCheck,
   TrendingUp,
-  Globe
+  Globe,
+  Trash2,
+  AlertTriangle
 } from 'lucide-react';
-import { getAllPostsAdmin } from '../../services/posts';
+import { getAllPostsAdmin, deletePost } from '../../services/posts';
 import { getAllUsers } from '../../services/auth';
 import { getAllSubscribers, getAllContactMessages } from '../../services/interactions';
 import { Post, UserProfile, NewsletterSubscription, ContactMessage } from '../../types';
 import { AdminLayout } from '../../components/admin/AdminLayout';
+import { useToast } from '../../components/Toast';
 import { SEO } from '../../components/SEO';
 
 export const AdminOverview: React.FC = () => {
@@ -29,6 +32,9 @@ export const AdminOverview: React.FC = () => {
   const [subscribers, setSubscribers] = useState<NewsletterSubscription[]>([]);
   const [messages, setMessages] = useState<ContactMessage[]>([]);
   const [loading, setLoading] = useState(true);
+  const [postToDelete, setPostToDelete] = useState<Post | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const { showToast } = useToast();
 
   useEffect(() => {
     const fetchAllData = async () => {
@@ -55,6 +61,22 @@ export const AdminOverview: React.FC = () => {
   const publishedCount = posts.filter(p => p.status === 'published').length;
   const draftCount = posts.filter(p => p.status === 'draft').length;
   const unreadMessagesCount = messages.filter(m => !m.read).length;
+
+  const handleDeletePost = async () => {
+    if (!postToDelete) return;
+    setIsDeleting(true);
+    try {
+      await deletePost(postToDelete.id);
+      setPosts(prev => prev.filter(p => p.id !== postToDelete.id));
+      showToast(`"${postToDelete.title}" permanently deleted.`, 'info');
+      setPostToDelete(null);
+    } catch (err) {
+      console.error(err);
+      showToast('Failed to delete article. Check permissions.', 'error');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   return (
     <AdminLayout>
@@ -265,6 +287,13 @@ export const AdminOverview: React.FC = () => {
                             >
                               View
                             </Link>
+                            <button
+                              onClick={() => setPostToDelete(post)}
+                              className="text-xs text-red-600 hover:text-red-700 underline"
+                              title="Delete reflection"
+                            >
+                              Delete
+                            </button>
                           </td>
                         </tr>
                       ))}
@@ -356,6 +385,47 @@ export const AdminOverview: React.FC = () => {
               </div>
             </div>
           </div>
+
+          {/* Delete Reflection Modal */}
+          {postToDelete && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+              <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full border border-[#EBE6DC] shadow-2xl space-y-4 animate-in fade-in zoom-in-95">
+                <div className="w-12 h-12 rounded-2xl bg-red-50 text-red-600 flex items-center justify-center border border-red-100">
+                  <AlertTriangle className="w-6 h-6" />
+                </div>
+
+                <div className="space-y-1">
+                  <h3 className="font-serif text-2xl text-[#122B22]">Delete Reflection?</h3>
+                  <p className="text-xs text-[#122B22]/80 leading-relaxed font-sans">
+                    Are you sure you want to permanently delete{' '}
+                    <span className="font-semibold text-[#122B22]">"{postToDelete.title}"</span>?
+                  </p>
+                </div>
+
+                <p className="text-[11px] text-[#8EA595] leading-relaxed">
+                  This will remove the article from Cloud Firestore permanently.
+                </p>
+
+                <div className="flex items-center justify-end gap-3 pt-3">
+                  <button
+                    disabled={isDeleting}
+                    onClick={() => setPostToDelete(null)}
+                    className="px-4 py-2.5 rounded-full text-xs font-semibold text-[#122B22] hover:bg-[#FAF7F2] transition-colors disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    disabled={isDeleting}
+                    onClick={handleDeletePost}
+                    className="px-5 py-2.5 rounded-full text-xs font-semibold bg-red-600 text-white hover:bg-red-700 shadow-sm transition-all flex items-center gap-2 disabled:opacity-50"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>{isDeleting ? 'Deleting...' : 'Delete Permanently'}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </AdminLayout>

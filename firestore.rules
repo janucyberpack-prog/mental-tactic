@@ -18,22 +18,32 @@ service cloud.firestore {
     }
 
     function isBootstrapAdmin() {
-      return isSignedIn() && request.auth.token.email.lower() == 'janucyberpack@gmail.com'.lower();
+      return isSignedIn() &&
+        'email' in request.auth.token &&
+        request.auth.token.email != null &&
+        (
+          request.auth.token.email == 'janucyberpack@gmail.com' ||
+          request.auth.token.email.toLowerCase() == 'janucyberpack@gmail.com'
+        );
     }
 
     function isAdmin() {
       return isBootstrapAdmin() || (
-        isSignedIn() &&
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
+        isSignedIn() && (
+          (request.auth.token.keys().hasAny(['role']) && request.auth.token.role == 'admin') ||
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+        )
       );
     }
 
     function isEditor() {
       return isAdmin() || (
-        isSignedIn() &&
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'editor'
+        isSignedIn() && (
+          (request.auth.token.keys().hasAny(['role']) && request.auth.token.role == 'editor') ||
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'editor')
+        )
       );
     }
 
@@ -63,8 +73,9 @@ service cloud.firestore {
     // Posts Collection
     match /posts/{postId} {
       // Anyone can read published posts; admins/editors can read all
-      allow read: if resource.data.status == 'published' || isEditor();
-      allow create, update, delete: if isEditor();
+      allow read: if (resource != null && resource.data.status == 'published') || isEditor();
+      allow create, update: if isEditor();
+      allow delete: if isAdmin() || isEditor();
     }
 
     // Reader Comments

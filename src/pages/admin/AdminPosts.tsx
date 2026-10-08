@@ -1,7 +1,29 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, Edit3, Trash2, Globe, EyeOff, Search, ExternalLink, Filter, Sparkles } from 'lucide-react';
-import { getAllPostsAdmin, deletePost, updatePost } from '../../services/posts';
+import {
+  Plus,
+  Edit3,
+  Trash2,
+  Globe,
+  EyeOff,
+  Search,
+  ExternalLink,
+  Copy,
+  CheckSquare,
+  Square,
+  AlertTriangle,
+  RefreshCw,
+  CheckCircle2,
+  X
+} from 'lucide-react';
+import {
+  getAllPostsAdmin,
+  deletePost,
+  deleteMultiplePosts,
+  updatePost,
+  duplicatePost,
+  bulkUpdateStatus
+} from '../../services/posts';
 import { Post, PostStatus } from '../../types';
 import { AdminLayout } from '../../components/admin/AdminLayout';
 import { useToast } from '../../components/Toast';
@@ -22,7 +44,19 @@ export const AdminPosts: React.FC = () => {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'published' | 'draft' | 'archived'>('all');
   const [categoryFilter, setCategoryFilter] = useState('All');
-  const [deleteModalId, setDeleteModalId] = useState<string | null>(null);
+
+  // Deletion modal states
+  const [postToDelete, setPostToDelete] = useState<Post | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+
+  // Duplicating state
+  const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
+
+  // Multi-selection states
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
   const { showToast } = useToast();
 
   const fetchPosts = async () => {
@@ -30,7 +64,7 @@ export const AdminPosts: React.FC = () => {
     try {
       const data = await getAllPostsAdmin();
       setPosts(data);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
       showToast('Failed to load articles from Firestore.', 'error');
     } finally {
@@ -46,41 +80,119 @@ export const AdminPosts: React.FC = () => {
     const nextStatus: PostStatus = post.status === 'published' ? 'draft' : 'published';
     try {
       await updatePost(post.id, { status: nextStatus });
-      setPosts(posts.map(p => p.id === post.id ? { ...p, status: nextStatus } : p));
+      setPosts(prev => prev.map(p => (p.id === post.id ? { ...p, status: nextStatus } : p)));
       showToast(`Article status updated to ${nextStatus}.`, 'success');
     } catch (err) {
       showToast('Unable to update article status.', 'error');
     }
   };
 
-  const handleDelete = async (id: string) => {
+  // Single post deletion
+  const handleDeleteSingle = async () => {
+    if (!postToDelete) return;
+    setIsDeleting(true);
     try {
-      await deletePost(id);
-      setPosts(posts.filter(p => p.id !== id));
-      setDeleteModalId(null);
-      showToast('Article permanently deleted.', 'info');
-    } catch (err) {
-      showToast('Failed to delete article.', 'error');
+      await deletePost(postToDelete.id);
+      setPosts(prev => prev.filter(p => p.id !== postToDelete.id));
+      setSelectedIds(prev => prev.filter(id => id !== postToDelete.id));
+      showToast(`"${postToDelete.title}" was permanently deleted.`, 'info');
+      setPostToDelete(null);
+    } catch (err: any) {
+      console.error('Failed to delete post:', err);
+      showToast('Failed to delete article. Check permissions.', 'error');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
+  // Bulk post deletion
+  const handleBulkDelete = async () => {
+    if (selectedIds.length === 0) return;
+    setIsBulkDeleting(true);
+    try {
+      await deleteMultiplePosts(selectedIds);
+      const count = selectedIds.length;
+      setPosts(prev => prev.filter(p => !selectedIds.includes(p.id)));
+      setSelectedIds([]);
+      setShowBulkDeleteModal(false);
+      showToast(`${count} article${count > 1 ? 's' : ''} permanently deleted.`, 'info');
+    } catch (err: any) {
+      console.error('Failed to bulk delete posts:', err);
+      showToast('Failed to delete selected articles.', 'error');
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
+
+  // Bulk status update
+  const handleBulkStatusChange = async (targetStatus: PostStatus) => {
+    if (selectedIds.length === 0) return;
+    try {
+      await bulkUpdateStatus(selectedIds, targetStatus);
+      setPosts(prev =>
+        prev.map(p => (selectedIds.includes(p.id) ? { ...p, status: targetStatus } : p))
+      );
+      showToast(`Updated ${selectedIds.length} article(s) to ${targetStatus}.`, 'success');
+      setSelectedIds([]);
+    } catch (err) {
+      showToast('Failed to update articles.', 'error');
+    }
+  };
+
+  // Duplicate post
+  const handleDuplicate = async (post: Post) => {
+    setDuplicatingId(post.id);
+    try {
+      await duplicatePost(post.id);
+      await fetchPosts();
+      showToast(`Created duplicate of "${post.title}".`, 'success');
+    } catch (err) {
+      showToast('Failed to duplicate article.', 'error');
+    } finally {
+      setDuplicatingId(null);
+    }
+  };
+
+  // Filter logic
   const filtered = posts.filter(post => {
     const matchesStatus = statusFilter === 'all' || post.status === statusFilter;
     const matchesCategory = categoryFilter === 'All' || post.category === categoryFilter;
     const query = search.trim().toLowerCase();
-    const matchesSearch = !query || (
+    const matchesSearch =
+      !query ||
       post.title.toLowerCase().includes(query) ||
       post.category.toLowerCase().includes(query) ||
       post.slug.toLowerCase().includes(query) ||
-      (post.authorName && post.authorName.toLowerCase().includes(query))
-    );
+      (post.authorName && post.authorName.toLowerCase().includes(query));
     return matchesStatus && matchesCategory && matchesSearch;
   });
+
+  // Checkbox helpers
+  const allFilteredSelected =
+    filtered.length > 0 && filtered.every(p => selectedIds.includes(p.id));
+
+  const toggleSelectAll = () => {
+    if (allFilteredSelected) {
+      setSelectedIds(prev => prev.filter(id => !filtered.some(f => f.id === id)));
+    } else {
+      const newIds = Array.from(new Set([...selectedIds, ...filtered.map(p => p.id)]));
+      setSelectedIds(newIds);
+    }
+  };
+
+  const toggleSelectOne = (id: string) => {
+    setSelectedIds(prev =>
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
+  };
 
   return (
     <AdminLayout>
       <div className="py-10 md:py-14">
-        <SEO title="Articles & Essays — Mental Tactic CMS" description="Manage all journal entries, publication states, and drafts." />
+        <SEO
+          title="Articles & Essays — Mental Tactic CMS"
+          description="Manage all journal entries, publication states, and drafts."
+        />
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 space-y-8">
           {/* Header */}
@@ -90,17 +202,28 @@ export const AdminPosts: React.FC = () => {
                 Journal Articles
               </h1>
               <p className="text-xs text-[#122B22]/70 font-sans mt-1">
-                Manage, edit, publish, or archive your contemplative reflections.
+                Manage, edit, publish, duplicate, or delete your contemplative reflections.
               </p>
             </div>
 
-            <Link
-              to="/admin/articles/new"
-              className="px-6 py-3 rounded-full bg-[#122B22] text-[#FAF7F2] text-xs font-semibold uppercase tracking-wider hover:bg-[#1A3B2F] transition-all flex items-center gap-2 self-start sm:self-auto shadow-sm"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Create Article</span>
-            </Link>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={fetchPosts}
+                disabled={loading}
+                title="Refresh Articles List"
+                className="p-2.5 rounded-full border border-[#EBE6DC] bg-white text-[#122B22] hover:bg-[#FAF7F2] transition-colors shadow-xs"
+              >
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-[#6F8A77]' : ''}`} />
+              </button>
+
+              <Link
+                to="/admin/articles/new"
+                className="px-6 py-3 rounded-full bg-[#122B22] text-[#FAF7F2] text-xs font-semibold uppercase tracking-wider hover:bg-[#1A3B2F] transition-all flex items-center gap-2 shadow-sm"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Create Article</span>
+              </Link>
+            </div>
           </div>
 
           {/* Filter & Search Bar */}
@@ -111,7 +234,7 @@ export const AdminPosts: React.FC = () => {
               <input
                 type="text"
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={e => setSearch(e.target.value)}
                 placeholder="Search by title, slug, category, or author..."
                 className="w-full bg-[#FAF7F2] border border-[#EBE6DC] rounded-full pl-11 pr-4 py-2.5 text-xs text-[#122B22] focus:outline-none focus:border-[#8EA595] transition-colors"
               />
@@ -121,11 +244,13 @@ export const AdminPosts: React.FC = () => {
             <div className="flex flex-wrap items-center gap-2">
               <select
                 value={categoryFilter}
-                onChange={(e) => setCategoryFilter(e.target.value)}
+                onChange={e => setCategoryFilter(e.target.value)}
                 className="bg-[#FAF7F2] border border-[#EBE6DC] rounded-full px-3.5 py-2 text-xs font-medium text-[#122B22] focus:outline-none"
               >
                 {CATEGORIES.map(c => (
-                  <option key={c} value={c}>{c === 'All' ? 'All Categories' : c}</option>
+                  <option key={c} value={c}>
+                    {c === 'All' ? 'All Categories' : c}
+                  </option>
                 ))}
               </select>
 
@@ -147,6 +272,49 @@ export const AdminPosts: React.FC = () => {
             </div>
           </div>
 
+          {/* Bulk Actions Bar (Visible when items selected) */}
+          {selectedIds.length > 0 && (
+            <div className="bg-[#122B22] text-[#FAF7F2] rounded-2xl px-5 py-3.5 shadow-lg flex flex-wrap items-center justify-between gap-4 animate-in fade-in slide-in-from-top-2">
+              <div className="flex items-center gap-2 text-xs font-medium">
+                <span className="w-5 h-5 rounded-full bg-[#B8E0D2] text-[#122B22] flex items-center justify-center text-[10px] font-bold">
+                  {selectedIds.length}
+                </span>
+                <span>article{selectedIds.length > 1 ? 's' : ''} selected</span>
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={() => handleBulkStatusChange('published')}
+                  className="px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-xs font-medium transition-colors flex items-center gap-1.5"
+                >
+                  <Globe className="w-3.5 h-3.5 text-[#B8E0D2]" />
+                  <span>Publish</span>
+                </button>
+                <button
+                  onClick={() => handleBulkStatusChange('draft')}
+                  className="px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-xs font-medium transition-colors flex items-center gap-1.5"
+                >
+                  <EyeOff className="w-3.5 h-3.5 text-amber-300" />
+                  <span>Unpublish</span>
+                </button>
+                <button
+                  onClick={() => setShowBulkDeleteModal(true)}
+                  className="px-3.5 py-1.5 rounded-full bg-red-600 hover:bg-red-700 text-white text-xs font-semibold transition-colors flex items-center gap-1.5 shadow-xs"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete Selected ({selectedIds.length})</span>
+                </button>
+                <button
+                  onClick={() => setSelectedIds([])}
+                  className="p-1.5 rounded-full text-white/70 hover:text-white transition-colors"
+                  title="Clear selection"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Articles Table */}
           <div className="bg-white rounded-3xl p-6 sm:p-8 border border-[#EBE6DC] shadow-sm overflow-hidden">
             {loading ? (
@@ -155,9 +323,15 @@ export const AdminPosts: React.FC = () => {
               </div>
             ) : filtered.length === 0 ? (
               <div className="py-16 text-center space-y-4">
-                <p className="text-sm font-serif text-[#122B22]">No articles found matching your criteria.</p>
+                <p className="text-sm font-serif text-[#122B22]">
+                  No articles found matching your criteria.
+                </p>
                 <button
-                  onClick={() => { setSearch(''); setStatusFilter('all'); setCategoryFilter('All'); }}
+                  onClick={() => {
+                    setSearch('');
+                    setStatusFilter('all');
+                    setCategoryFilter('All');
+                  }}
                   className="px-4 py-2 rounded-full border border-[#EBE6DC] text-xs font-semibold text-[#122B22] hover:bg-[#FAF7F2]"
                 >
                   Clear Filters
@@ -168,6 +342,20 @@ export const AdminPosts: React.FC = () => {
                 <table className="w-full text-left text-sm">
                   <thead>
                     <tr className="border-b border-[#F2ECE4] text-[11px] uppercase tracking-wider text-[#8EA595]">
+                      <th className="pb-4 w-10">
+                        <button
+                          type="button"
+                          onClick={toggleSelectAll}
+                          className="text-[#6F8A77] hover:text-[#122B22] transition-colors"
+                          title={allFilteredSelected ? 'Deselect all' : 'Select all'}
+                        >
+                          {allFilteredSelected ? (
+                            <CheckSquare className="w-4 h-4 text-[#122B22]" />
+                          ) : (
+                            <Square className="w-4 h-4" />
+                          )}
+                        </button>
+                      </th>
                       <th className="pb-4 font-semibold">Article</th>
                       <th className="pb-4 font-semibold">Category</th>
                       <th className="pb-4 font-semibold">Status</th>
@@ -177,110 +365,224 @@ export const AdminPosts: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#F2ECE4]">
-                    {filtered.map(post => (
-                      <tr key={post.id} className="hover:bg-[#FAF7F2]/60 transition-colors">
-                        <td className="py-4 pr-4">
-                          <div className="flex items-center gap-3">
-                            {post.coverImage && (
-                              <img
-                                src={post.coverImage}
-                                alt=""
-                                className="w-12 h-12 rounded-xl object-cover shrink-0 border border-[#EBE6DC]"
-                              />
-                            )}
-                            <div className="min-w-0">
-                              <div className="font-medium text-[#122B22] truncate max-w-sm sm:max-w-md">
-                                {post.title}
-                              </div>
-                              <div className="text-[11px] text-[#8EA595] truncate">
-                                /journal/{post.slug}
+                    {filtered.map(post => {
+                      const isSelected = selectedIds.includes(post.id);
+                      return (
+                        <tr
+                          key={post.id}
+                          className={`hover:bg-[#FAF7F2]/60 transition-colors ${
+                            isSelected ? 'bg-[#FAF7F2]/80' : ''
+                          }`}
+                        >
+                          {/* Selection Checkbox */}
+                          <td className="py-4 pr-3">
+                            <button
+                              type="button"
+                              onClick={() => toggleSelectOne(post.id)}
+                              className="text-[#6F8A77] hover:text-[#122B22] transition-colors"
+                            >
+                              {isSelected ? (
+                                <CheckSquare className="w-4 h-4 text-[#122B22]" />
+                              ) : (
+                                <Square className="w-4 h-4" />
+                              )}
+                            </button>
+                          </td>
+
+                          {/* Article Info */}
+                          <td className="py-4 pr-4">
+                            <div className="flex items-center gap-3">
+                              {post.coverImage && (
+                                <img
+                                  src={post.coverImage}
+                                  alt=""
+                                  className="w-12 h-12 rounded-xl object-cover shrink-0 border border-[#EBE6DC]"
+                                />
+                              )}
+                              <div className="min-w-0">
+                                <div className="font-medium text-[#122B22] truncate max-w-sm sm:max-w-md">
+                                  {post.title}
+                                </div>
+                                <div className="text-[11px] text-[#8EA595] truncate">
+                                  /journal/{post.slug}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        </td>
-                        <td className="py-4 pr-4">
-                          <span className="px-2.5 py-0.5 rounded-full text-xs bg-[#FAF7F2] border border-[#EBE6DC] text-[#6F8A77]">
-                            {post.category}
-                          </span>
-                        </td>
-                        <td className="py-4 pr-4">
-                          <button
-                            onClick={() => handleTogglePublish(post)}
-                            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider transition-colors ${
-                              post.status === 'published'
-                                ? 'bg-[#B8E0D2]/50 text-[#122B22] hover:bg-[#B8E0D2]'
-                                : 'bg-[#FAF7F2] text-[#8EA595] hover:bg-[#EAE5DB]'
-                            }`}
-                            title="Click to toggle status"
-                          >
-                            {post.status === 'published' ? (
-                              <Globe className="w-3 h-3 text-emerald-700" />
-                            ) : (
-                              <EyeOff className="w-3 h-3 text-amber-700" />
-                            )}
-                            <span>{post.status}</span>
-                          </button>
-                        </td>
-                        <td className="py-4 pr-4 text-xs text-[#6F8A77]">
-                          {post.readingTime} min
-                        </td>
-                        <td className="py-4 pr-4 text-xs text-[#6F8A77] truncate max-w-[120px]">
-                          {post.authorName || 'Elena Vance'}
-                        </td>
-                        <td className="py-4 text-right">
-                          <div className="flex items-center justify-end gap-2.5">
-                            <Link
-                              to={`/journal/${post.slug}`}
-                              target="_blank"
-                              className="p-1.5 rounded-full hover:bg-[#FAF7F2] text-[#6F8A77] hover:text-[#122B22]"
-                              title="View Live Article"
-                            >
-                              <ExternalLink className="w-4 h-4" />
-                            </Link>
-                            <Link
-                              to={`/admin/articles/${post.id}/edit`}
-                              className="p-1.5 rounded-full hover:bg-[#FAF7F2] text-[#122B22]"
-                              title="Edit Article"
-                            >
-                              <Edit3 className="w-4 h-4" />
-                            </Link>
+                          </td>
+
+                          {/* Category */}
+                          <td className="py-4 pr-4">
+                            <span className="px-2.5 py-0.5 rounded-full text-xs bg-[#FAF7F2] border border-[#EBE6DC] text-[#6F8A77]">
+                              {post.category}
+                            </span>
+                          </td>
+
+                          {/* Status toggle */}
+                          <td className="py-4 pr-4">
                             <button
-                              onClick={() => setDeleteModalId(post.id)}
-                              className="p-1.5 rounded-full hover:bg-red-50 text-red-600"
-                              title="Delete Article"
+                              onClick={() => handleTogglePublish(post)}
+                              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider transition-colors ${
+                                post.status === 'published'
+                                  ? 'bg-[#B8E0D2]/50 text-[#122B22] hover:bg-[#B8E0D2]'
+                                  : 'bg-[#FAF7F2] text-[#8EA595] hover:bg-[#EAE5DB]'
+                              }`}
+                              title="Click to toggle status"
                             >
-                              <Trash2 className="w-4 h-4" />
+                              {post.status === 'published' ? (
+                                <Globe className="w-3 h-3 text-emerald-700" />
+                              ) : (
+                                <EyeOff className="w-3 h-3 text-amber-700" />
+                              )}
+                              <span>{post.status}</span>
                             </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+
+                          {/* Reading time */}
+                          <td className="py-4 pr-4 text-xs text-[#6F8A77]">
+                            {post.readingTime} min
+                          </td>
+
+                          {/* Author */}
+                          <td className="py-4 pr-4 text-xs text-[#6F8A77] truncate max-w-[120px]">
+                            {post.authorName || 'Elena Vance'}
+                          </td>
+
+                          {/* Actions */}
+                          <td className="py-4 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              {/* View live */}
+                              <Link
+                                to={`/journal/${post.slug}`}
+                                target="_blank"
+                                className="p-1.5 rounded-full hover:bg-[#FAF7F2] text-[#6F8A77] hover:text-[#122B22] transition-colors"
+                                title="View Live Article"
+                              >
+                                <ExternalLink className="w-4 h-4" />
+                              </Link>
+
+                              {/* Duplicate */}
+                              <button
+                                onClick={() => handleDuplicate(post)}
+                                disabled={duplicatingId === post.id}
+                                className="p-1.5 rounded-full hover:bg-[#FAF7F2] text-[#6F8A77] hover:text-[#122B22] transition-colors"
+                                title="Duplicate Article"
+                              >
+                                <Copy
+                                  className={`w-4 h-4 ${
+                                    duplicatingId === post.id ? 'animate-spin text-[#122B22]' : ''
+                                  }`}
+                                />
+                              </button>
+
+                              {/* Edit */}
+                              <Link
+                                to={`/admin/articles/${post.id}/edit`}
+                                className="p-1.5 rounded-full hover:bg-[#FAF7F2] text-[#122B22] transition-colors"
+                                title="Edit Article"
+                              >
+                                <Edit3 className="w-4 h-4" />
+                              </Link>
+
+                              {/* Delete */}
+                              <button
+                                onClick={() => setPostToDelete(post)}
+                                className="p-1.5 rounded-full hover:bg-red-50 text-red-600 hover:text-red-700 transition-colors"
+                                title="Delete Article"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
             )}
           </div>
 
-          {/* Delete Confirmation Modal */}
-          {deleteModalId && (
+          {/* Single Delete Confirmation Modal */}
+          {postToDelete && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
-              <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-sm w-full border border-[#EBE6DC] shadow-2xl space-y-4">
-                <h3 className="font-serif text-2xl text-[#122B22]">Delete Reflection?</h3>
-                <p className="text-xs text-[#122B22]/70 leading-relaxed font-sans">
-                  This will permanently delete this article from your Cloud Firestore database. This action cannot be reversed.
+              <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full border border-[#EBE6DC] shadow-2xl space-y-4 animate-in fade-in zoom-in-95">
+                <div className="w-12 h-12 rounded-2xl bg-red-50 text-red-600 flex items-center justify-center border border-red-100">
+                  <AlertTriangle className="w-6 h-6" />
+                </div>
+
+                <div className="space-y-1">
+                  <h3 className="font-serif text-2xl text-[#122B22]">Delete Reflection?</h3>
+                  <p className="text-xs text-[#122B22]/80 leading-relaxed font-sans">
+                    Are you sure you want to permanently delete{' '}
+                    <span className="font-semibold text-[#122B22]">"{postToDelete.title}"</span>?
+                  </p>
+                </div>
+
+                <p className="text-[11px] text-[#8EA595] leading-relaxed">
+                  This will remove the article and all associated reader data from your Cloud Firestore database. This action cannot be reversed.
                 </p>
+
                 <div className="flex items-center justify-end gap-3 pt-3">
                   <button
-                    onClick={() => setDeleteModalId(null)}
-                    className="px-4 py-2 rounded-full text-xs font-semibold text-[#122B22] hover:bg-[#FAF7F2]"
+                    disabled={isDeleting}
+                    onClick={() => setPostToDelete(null)}
+                    className="px-4 py-2.5 rounded-full text-xs font-semibold text-[#122B22] hover:bg-[#FAF7F2] transition-colors disabled:opacity-50"
                   >
                     Cancel
                   </button>
                   <button
-                    onClick={() => handleDelete(deleteModalId)}
-                    className="px-5 py-2 rounded-full text-xs font-semibold bg-red-600 text-white hover:bg-red-700 shadow-sm"
+                    disabled={isDeleting}
+                    onClick={handleDeleteSingle}
+                    className="px-5 py-2.5 rounded-full text-xs font-semibold bg-red-600 text-white hover:bg-red-700 shadow-sm transition-all flex items-center gap-2 disabled:opacity-50"
                   >
-                    Delete Permanently
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>{isDeleting ? 'Deleting...' : 'Delete Permanently'}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Bulk Delete Confirmation Modal */}
+          {showBulkDeleteModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+              <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full border border-[#EBE6DC] shadow-2xl space-y-4 animate-in fade-in zoom-in-95">
+                <div className="w-12 h-12 rounded-2xl bg-red-50 text-red-600 flex items-center justify-center border border-red-100">
+                  <AlertTriangle className="w-6 h-6" />
+                </div>
+
+                <div className="space-y-1">
+                  <h3 className="font-serif text-2xl text-[#122B22]">
+                    Delete {selectedIds.length} Reflections?
+                  </h3>
+                  <p className="text-xs text-[#122B22]/80 leading-relaxed font-sans">
+                    This will permanently delete the {selectedIds.length} selected articles from Cloud Firestore.
+                  </p>
+                </div>
+
+                <p className="text-[11px] text-[#8EA595] leading-relaxed">
+                  This operation cannot be undone. All selected articles will be removed from both public viewing and the admin studio.
+                </p>
+
+                <div className="flex items-center justify-end gap-3 pt-3">
+                  <button
+                    disabled={isBulkDeleting}
+                    onClick={() => setShowBulkDeleteModal(false)}
+                    className="px-4 py-2.5 rounded-full text-xs font-semibold text-[#122B22] hover:bg-[#FAF7F2] transition-colors disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    disabled={isBulkDeleting}
+                    onClick={handleBulkDelete}
+                    className="px-5 py-2.5 rounded-full text-xs font-semibold bg-red-600 text-white hover:bg-red-700 shadow-sm transition-all flex items-center gap-2 disabled:opacity-50"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>
+                      {isBulkDeleting
+                        ? 'Deleting...'
+                        : `Delete ${selectedIds.length} Article${selectedIds.length > 1 ? 's' : ''}`}
+                    </span>
                   </button>
                 </div>
               </div>
