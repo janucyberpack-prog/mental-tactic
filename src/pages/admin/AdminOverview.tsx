@@ -256,8 +256,19 @@ export const AdminOverview: React.FC = () => {
                       {posts.slice(0, 5).map((post) => (
                         <tr key={post.id} className="hover:bg-[#FAF7F2] transition-colors">
                           <td className="py-3.5 pr-4">
-                            <div className="font-medium text-[#122B22] max-w-xs truncate">{post.title}</div>
-                            <div className="text-[11px] text-[#8EA595] truncate">/journal/{post.slug}</div>
+                            <div className="flex items-center gap-3">
+                              {post.coverImage && (
+                                <img
+                                  src={post.coverImage}
+                                  alt=""
+                                  className="w-10 h-10 rounded-xl object-cover shrink-0 border border-[#EBE6DC]"
+                                />
+                              )}
+                              <div className="min-w-0">
+                                <div className="font-medium text-[#122B22] max-w-xs truncate">{post.title}</div>
+                                <div className="text-[11px] text-[#8EA595] truncate">/journal/{post.slug}</div>
+                              </div>
+                            </div>
                           </td>
                           <td className="py-3.5 pr-4">
                             <span className="px-2.5 py-0.5 rounded-full text-xs bg-[#FAF7F2] border border-[#EBE6DC] text-[#6F8A77]">

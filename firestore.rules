@@ -78,6 +78,18 @@ service cloud.firestore {
       allow delete: if isAdmin() || isEditor();
     }
 
+    // Media Collection (Device uploaded images saved directly in Firestore)
+    match /media/{mediaId} {
+      allow read: if true;
+      allow create, update: if isEditor();
+      allow delete: if isAdmin() || isEditor();
+    }
+
+    // Audit Logs
+    match /auditLogs/{logId} {
+      allow read, create: if isEditor();
+    }
+
     // Reader Comments
     match /comments/{commentId} {
       allow read: if true;

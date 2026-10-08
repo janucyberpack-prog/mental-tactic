@@ -304,6 +304,46 @@ export const ArticleDetail: React.FC = () => {
         <div style={{ maxWidth: '680px', margin: '0 auto' }}>
           <div style={{ fontSize: '17px', lineHeight: 1.85, color: 'rgba(24, 34, 29, 0.88)' }} className="space-y-6">
             {post.content.split('\n\n').map((paragraph, idx) => {
+              // Markdown image: ![caption](url)
+              const imgMatch = paragraph.match(/^!\[(.*?)\]\((.*?)\)$/);
+              if (imgMatch) {
+                const caption = imgMatch[1];
+                const src = imgMatch[2];
+                return (
+                  <figure
+                    key={idx}
+                    style={{
+                      margin: '36px 0',
+                      borderRadius: '20px',
+                      overflow: 'hidden',
+                      border: '1px solid var(--line)',
+                      backgroundColor: 'var(--white)'
+                    }}
+                  >
+                    <img
+                      src={src}
+                      alt={caption || post.title}
+                      style={{ width: '100%', maxHeight: '520px', objectFit: 'cover', display: 'block' }}
+                      loading="lazy"
+                    />
+                    {caption && (
+                      <figcaption
+                        style={{
+                          textAlign: 'center',
+                          fontSize: '12px',
+                          color: 'var(--dark)',
+                          padding: '10px 16px',
+                          fontStyle: 'italic',
+                          borderTop: '1px solid var(--line)'
+                        }}
+                      >
+                        {caption}
+                      </figcaption>
+                    )}
+                  </figure>
+                );
+              }
+
               if (paragraph.startsWith('### ')) {
                 return (
                   <h3 key={idx} className="serif" style={{ fontSize: '28px', color: 'var(--ink)', paddingTop: '20px', margin: '0 0 10px' }}>

@@ -70,3 +70,18 @@ export interface ContactMessage {
   read?: boolean;
   createdAt: any;
 }
+
+export interface MediaItem {
+  id: string;
+  name: string;
+  dataUrl: string;
+  mimeType: string;
+  sizeBytes: number;
+  width?: number;
+  height?: number;
+  postId?: string;
+  caption?: string;
+  uploadedBy?: string;
+  authorEmail?: string;
+  createdAt: any;
+}
