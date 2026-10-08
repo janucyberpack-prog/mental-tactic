@@ -5,6 +5,7 @@ import {
   signOut,
   sendPasswordResetEmail,
   updateProfile,
+  updatePassword,
   User
 } from 'firebase/auth';
 import {
@@ -12,12 +13,18 @@ import {
   getDoc,
   setDoc,
   updateDoc,
+  deleteDoc,
+  collection,
+  getDocs,
   serverTimestamp
 } from 'firebase/firestore';
 import { auth, db, googleProvider, handleFirestoreError, OperationType } from '../lib/firebase';
 import { UserProfile, UserRole } from '../types';
 
-const BOOTSTRAP_ADMIN_EMAIL = 'janucyberpack@gmail.com';
+export const BOOTSTRAP_ADMIN_EMAIL =
+  (import.meta.env.VITE_INITIAL_ADMIN_EMAIL as string) || 'janucyberpack@gmail.com';
+export const BOOTSTRAP_ADMIN_PASSWORD =
+  (import.meta.env.VITE_INITIAL_ADMIN_PASSWORD as string) || 'admin1234';
 
 export async function getUserProfile(uid: string): Promise<UserProfile | null> {
   const path = `users/${uid}`;
@@ -44,7 +51,7 @@ export async function syncUserProfile(user: User): Promise<UserProfile> {
       const initialProfile: UserProfile = {
         uid: user.uid,
         email: user.email || '',
-        displayName: user.displayName || user.email?.split('@')[0] || 'Mindful Thinker',
+        displayName: user.displayName || user.email?.split('@')[0] || (isBootstrapAdmin ? 'Primary Administrator' : 'Mindful Thinker'),
         photoURL: user.photoURL || '',
         role: isBootstrapAdmin ? 'admin' : 'user',
         createdAt: serverTimestamp(),
@@ -81,8 +88,33 @@ export async function registerWithEmail(email: string, pass: string, displayName
 }
 
 export async function loginWithEmail(email: string, pass: string): Promise<UserProfile> {
-  const userCredential = await signInWithEmailAndPassword(auth, email.trim(), pass);
-  return await syncUserProfile(userCredential.user);
+  const cleanEmail = email.trim();
+  try {
+    const userCredential = await signInWithEmailAndPassword(auth, cleanEmail, pass);
+    return await syncUserProfile(userCredential.user);
+  } catch (error: any) {
+    // Check if this is the bootstrap administrator attempting initial login before account exists in Firebase Auth
+    const isBootstrapEmail = cleanEmail.toLowerCase() === BOOTSTRAP_ADMIN_EMAIL.toLowerCase();
+    const isBootstrapPass = pass === BOOTSTRAP_ADMIN_PASSWORD;
+
+    if (
+      isBootstrapEmail &&
+      isBootstrapPass &&
+      (error.code === 'auth/user-not-found' ||
+        error.code === 'auth/invalid-credential' ||
+        error.code === 'auth/wrong-password')
+    ) {
+      try {
+        // Provision the initial administrator account securely via Firebase Auth
+        const newCredential = await createUserWithEmailAndPassword(auth, cleanEmail, pass);
+        await updateProfile(newCredential.user, { displayName: 'Primary Administrator' });
+        return await syncUserProfile(newCredential.user);
+      } catch (provisionErr) {
+        console.warn('Initial admin provisioning fallback:', provisionErr);
+      }
+    }
+    throw error;
+  }
 }
 
 export async function loginWithGoogle(): Promise<UserProfile> {
@@ -96,6 +128,51 @@ export async function logoutUser(): Promise<void> {
 
 export async function resetPassword(email: string): Promise<void> {
   await sendPasswordResetEmail(auth, email.trim());
+}
+
+export async function changeAdminPassword(newPassword: string): Promise<void> {
+  if (!auth.currentUser) {
+    throw new Error('No authenticated user session found.');
+  }
+  if (!newPassword || newPassword.length < 6) {
+    throw new Error('Password must be at least 6 characters long.');
+  }
+  await updatePassword(auth.currentUser, newPassword);
+}
+
+export async function getAllUsers(): Promise<UserProfile[]> {
+  const path = 'users';
+  try {
+    const snap = await getDocs(collection(db, 'users'));
+    return snap.docs.map(d => ({
+      uid: d.id,
+      ...d.data()
+    })) as UserProfile[];
+  } catch (error) {
+    handleFirestoreError(error, OperationType.GET, path);
+    return [];
+  }
+}
+
+export async function updateUserRole(uid: string, newRole: UserRole): Promise<void> {
+  const path = `users/${uid}`;
+  try {
+    await updateDoc(doc(db, 'users', uid), {
+      role: newRole,
+      updatedAt: serverTimestamp()
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+export async function deleteUserRecord(uid: string): Promise<void> {
+  const path = `users/${uid}`;
+  try {
+    await deleteDoc(doc(db, 'users', uid));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
 }
 
 export async function updateUserProfileBio(uid: string, data: { displayName?: string; bio?: string; photoURL?: string }): Promise<void> {
@@ -117,3 +194,4 @@ export async function updateUserProfileBio(uid: string, data: { displayName?: st
     handleFirestoreError(error, OperationType.UPDATE, path);
   }
 }
+

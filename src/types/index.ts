@@ -67,5 +67,6 @@ export interface ContactMessage {
   name: string;
   email: string;
   message: string;
+  read?: boolean;
   createdAt: any;
 }

@@ -4,9 +4,13 @@ import {
   serverTimestamp,
   query,
   where,
-  getDocs
+  getDocs,
+  deleteDoc,
+  doc,
+  updateDoc
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
+import { NewsletterSubscription, ContactMessage } from '../types';
 
 export async function subscribeNewsletter(email: string): Promise<{ success: boolean; message: string }> {
   const cleanEmail = email.trim().toLowerCase();
@@ -39,6 +43,29 @@ export async function subscribeNewsletter(email: string): Promise<{ success: boo
   }
 }
 
+export async function getAllSubscribers(): Promise<NewsletterSubscription[]> {
+  const path = 'newsletterSubscribers';
+  try {
+    const snap = await getDocs(collection(db, 'newsletterSubscribers'));
+    return snap.docs.map(d => ({
+      id: d.id,
+      ...d.data()
+    })) as NewsletterSubscription[];
+  } catch (error) {
+    console.warn('Fallback subscribers fetch:', error);
+    return [];
+  }
+}
+
+export async function deleteSubscriber(id: string): Promise<void> {
+  const path = `newsletterSubscribers/${id}`;
+  try {
+    await deleteDoc(doc(db, 'newsletterSubscribers', id));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
 export async function submitContactMessage(name: string, email: string, message: string): Promise<{ success: boolean; message: string }> {
   const cleanName = name.trim();
   const cleanEmail = email.trim().toLowerCase();
@@ -62,6 +89,7 @@ export async function submitContactMessage(name: string, email: string, message:
       name: cleanName,
       email: cleanEmail,
       message: cleanMessage,
+      read: false,
       createdAt: serverTimestamp()
     });
     return { success: true, message: 'Your message has been received with care. We will respond in stillness.' };
@@ -70,3 +98,36 @@ export async function submitContactMessage(name: string, email: string, message:
     return { success: true, message: 'Your message has been received. Thank you for connecting with Mental Tactic.' };
   }
 }
+
+export async function getAllContactMessages(): Promise<ContactMessage[]> {
+  const path = 'contactMessages';
+  try {
+    const snap = await getDocs(collection(db, 'contactMessages'));
+    return snap.docs.map(d => ({
+      id: d.id,
+      ...d.data()
+    })) as ContactMessage[];
+  } catch (error) {
+    console.warn('Fallback contact messages fetch:', error);
+    return [];
+  }
+}
+
+export async function toggleMessageRead(id: string, read: boolean): Promise<void> {
+  const path = `contactMessages/${id}`;
+  try {
+    await updateDoc(doc(db, 'contactMessages', id), { read });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+export async function deleteContactMessage(id: string): Promise<void> {
+  const path = `contactMessages/${id}`;
+  try {
+    await deleteDoc(doc(db, 'contactMessages', id));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
