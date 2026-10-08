@@ -185,12 +185,18 @@ Stillness is not an indulgence. It is the fundamental baseline upon which mental
 
 export async function seedInitialPostsIfEmpty(): Promise<void> {
   try {
+    const seedMarkerRef = doc(db, 'settings', 'content_seed');
+    const markerSnap = await getDoc(seedMarkerRef);
+    if (markerSnap.exists()) {
+      // Content was already initialized, do not overwrite or resurrect deleted posts
+      return;
+    }
+
     const postsCol = collection(db, 'posts');
     const q = query(postsCol, limit(1));
     const snapshot = await getDocs(q);
 
     if (snapshot.empty) {
-      console.log('Seeding initial Mental Tactic journal articles into Firestore...');
       for (const item of INITIAL_SEED_POSTS) {
         await addDoc(postsCol, {
           ...item,
@@ -199,10 +205,20 @@ export async function seedInitialPostsIfEmpty(): Promise<void> {
           publishedAt: serverTimestamp()
         });
       }
-      console.log('Seeding completed successfully.');
+      try {
+        await setDoc(seedMarkerRef, { initialized: true, seededAt: serverTimestamp() });
+      } catch (mErr) {
+        // Non-critical if marker cannot be written due to rules
+      }
+    } else {
+      try {
+        await setDoc(seedMarkerRef, { initialized: true, seededAt: serverTimestamp() });
+      } catch {
+        // Non-critical
+      }
     }
   } catch (error) {
-    console.warn('Seed operation skipped or pending permission:', error);
+    // Seed skipped
   }
 }
 
@@ -212,7 +228,7 @@ export async function getPublishedPosts(category?: string, tag?: string): Promis
     const postsCol = collection(db, 'posts');
     let q = query(postsCol, where('status', '==', 'published'));
     
-    if (category && category !== 'All') {
+    if (category && category !== 'All' && category !== 'All notes') {
       q = query(q, where('category', '==', category));
     }
     
@@ -221,25 +237,6 @@ export async function getPublishedPosts(category?: string, tag?: string): Promis
       id: doc.id,
       ...doc.data()
     })) as Post[];
-
-    // If Firestore has no documents yet, return initial seed data mapped with IDs
-    if (posts.length === 0) {
-      let filtered = INITIAL_SEED_POSTS.map((item, idx) => ({
-        id: `seed-${idx}`,
-        ...item,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        publishedAt: new Date().toISOString()
-      })) as Post[];
-
-      if (category && category !== 'All') {
-        filtered = filtered.filter(p => p.category.toLowerCase() === category.toLowerCase());
-      }
-      if (tag) {
-        filtered = filtered.filter(p => p.tags.includes(tag));
-      }
-      return filtered;
-    }
 
     if (tag) {
       posts = posts.filter(p => p.tags && p.tags.includes(tag));
@@ -254,21 +251,8 @@ export async function getPublishedPosts(category?: string, tag?: string): Promis
 
     return posts;
   } catch (error) {
-    console.warn('Falling back to local editorial seed content:', error);
-    let filtered = INITIAL_SEED_POSTS.map((item, idx) => ({
-      id: `seed-${idx}`,
-      ...item,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      publishedAt: new Date().toISOString()
-    })) as Post[];
-    if (category && category !== 'All') {
-      filtered = filtered.filter(p => p.category.toLowerCase() === category.toLowerCase());
-    }
-    if (tag) {
-      filtered = filtered.filter(p => p.tags.includes(tag));
-    }
-    return filtered;
+    console.warn('Error fetching published posts from Firestore:', error);
+    return [];
   }
 }
 
@@ -284,30 +268,8 @@ export async function getPostBySlug(slug: string): Promise<Post | null> {
       return { id: docSnap.id, ...docSnap.data() } as Post;
     }
 
-    // Check seed posts fallback
-    const seedFound = INITIAL_SEED_POSTS.find(p => p.slug === slug);
-    if (seedFound) {
-      return {
-        id: `seed-${slug}`,
-        ...seedFound,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        publishedAt: new Date().toISOString()
-      } as Post;
-    }
-
     return null;
   } catch (error) {
-    const seedFound = INITIAL_SEED_POSTS.find(p => p.slug === slug);
-    if (seedFound) {
-      return {
-        id: `seed-${slug}`,
-        ...seedFound,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        publishedAt: new Date().toISOString()
-      } as Post;
-    }
     handleFirestoreError(error, OperationType.GET, path);
   }
 }
@@ -315,19 +277,6 @@ export async function getPostBySlug(slug: string): Promise<Post | null> {
 export async function getPostById(id: string): Promise<Post | null> {
   const path = `posts/${id}`;
   try {
-    if (id.startsWith('seed-')) {
-      const index = parseInt(id.replace('seed-', ''), 10);
-      if (!isNaN(index) && INITIAL_SEED_POSTS[index]) {
-        return {
-          id,
-          ...INITIAL_SEED_POSTS[index],
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          publishedAt: new Date().toISOString()
-        } as Post;
-      }
-    }
-
     const docSnap = await getDoc(doc(db, 'posts', id));
     if (docSnap.exists()) {
       return { id: docSnap.id, ...docSnap.data() } as Post;
@@ -343,28 +292,19 @@ export async function getAllPostsAdmin(): Promise<Post[]> {
   try {
     const postsCol = collection(db, 'posts');
     const snapshot = await getDocs(postsCol);
-    if (snapshot.empty) {
-      // Check if user deleted any local seed posts
-      const deletedSeeds: string[] = (() => {
-        try {
-          return JSON.parse(localStorage.getItem('deleted_seed_posts') || '[]');
-        } catch {
-          return [];
-        }
-      })();
-
-      return INITIAL_SEED_POSTS.map((item, idx) => ({
-        id: `seed-${idx}`,
-        ...item,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        publishedAt: new Date().toISOString()
-      })).filter(p => !deletedSeeds.includes(p.id)) as Post[];
-    }
-    return snapshot.docs.map(doc => ({
+    const posts = snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
     })) as Post[];
+
+    // Sort most recent first
+    posts.sort((a, b) => {
+      const timeA = a.updatedAt?.toMillis ? a.updatedAt.toMillis() : new Date(a.updatedAt || a.createdAt || 0).getTime();
+      const timeB = b.updatedAt?.toMillis ? b.updatedAt.toMillis() : new Date(b.updatedAt || b.createdAt || 0).getTime();
+      return timeB - timeA;
+    });
+
+    return posts;
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, path);
   }
@@ -389,26 +329,6 @@ export async function createPost(postData: Omit<Post, 'id' | 'createdAt' | 'upda
 export async function updatePost(id: string, postData: Partial<Post>): Promise<void> {
   const path = `posts/${id}`;
   try {
-    if (id.startsWith('seed-')) {
-      // Convert seed post into a real persisted document in Firestore
-      const index = parseInt(id.replace('seed-', ''), 10);
-      const basePost = INITIAL_SEED_POSTS[index] || {};
-      const postsCol = collection(db, 'posts');
-      await addDoc(postsCol, {
-        ...basePost,
-        ...postData,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-        publishedAt: (postData.status || basePost.status) === 'published' ? serverTimestamp() : null
-      });
-      // Mark seed as replaced/deleted
-      const deletedSeeds = JSON.parse(localStorage.getItem('deleted_seed_posts') || '[]');
-      if (!deletedSeeds.includes(id)) {
-        deletedSeeds.push(id);
-        localStorage.setItem('deleted_seed_posts', JSON.stringify(deletedSeeds));
-      }
-      return;
-    }
     const postRef = doc(db, 'posts', id);
     const updatePayload: Record<string, any> = {
       ...postData,
@@ -426,20 +346,6 @@ export async function updatePost(id: string, postData: Partial<Post>): Promise<v
 export async function deletePost(id: string): Promise<void> {
   const path = `posts/${id}`;
   try {
-    if (id.startsWith('seed-')) {
-      const deletedSeeds: string[] = (() => {
-        try {
-          return JSON.parse(localStorage.getItem('deleted_seed_posts') || '[]');
-        } catch {
-          return [];
-        }
-      })();
-      if (!deletedSeeds.includes(id)) {
-        deletedSeeds.push(id);
-        localStorage.setItem('deleted_seed_posts', JSON.stringify(deletedSeeds));
-      }
-      return;
-    }
     await deleteDoc(doc(db, 'posts', id));
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);

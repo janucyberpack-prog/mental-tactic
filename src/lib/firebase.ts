@@ -3,14 +3,24 @@ import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 
+const getEnv = (key: string): string | undefined => {
+  if (typeof import.meta !== 'undefined' && import.meta.env) {
+    return import.meta.env[key];
+  }
+  if (typeof process !== 'undefined' && process.env) {
+    return process.env[key];
+  }
+  return undefined;
+};
+
 export const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyD1IZcA9yExvia-gZ6fbCdRUdfPtoCzni0",
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "mental-tactic-65c43.firebaseapp.com",
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "mental-tactic-65c43",
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "mental-tactic-65c43.firebasestorage.app",
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "986154897741",
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:986154897741:web:a839b31d0ea9249f3ae704",
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || "G-NJYNZ5D2ES"
+  apiKey: getEnv('VITE_FIREBASE_API_KEY') || "AIzaSyD1IZcA9yExvia-gZ6fbCdRUdfPtoCzni0",
+  authDomain: getEnv('VITE_FIREBASE_AUTH_DOMAIN') || "mental-tactic-65c43.firebaseapp.com",
+  projectId: getEnv('VITE_FIREBASE_PROJECT_ID') || "mental-tactic-65c43",
+  storageBucket: getEnv('VITE_FIREBASE_STORAGE_BUCKET') || "mental-tactic-65c43.firebasestorage.app",
+  messagingSenderId: getEnv('VITE_FIREBASE_MESSAGING_SENDER_ID') || "986154897741",
+  appId: getEnv('VITE_FIREBASE_APP_ID') || "1:986154897741:web:a839b31d0ea9249f3ae704",
+  measurementId: getEnv('VITE_FIREBASE_MEASUREMENT_ID') || "G-NJYNZ5D2ES"
 };
 
 // Initialize Firebase once
